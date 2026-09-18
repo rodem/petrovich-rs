@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  Registration-free COM для petrovich-com: реестра ВООБЩЕ нет (даже HKCU).
+
+  Как использовать: положите этот файл рядом с .exe клиента под именем
+  "<имя exe>.manifest" (например, "myapp.exe.manifest"), а petrovich_com.dll
+  (нужной битности!) — рядом с exe. ProgID в коде — "Padeg.Declension".
+
+  CLSID {E4B2C1A0-5D6F-4A7B-8C9D-0E1F2A3B4C5D} обязан совпадать с
+  CLSID_DECLENSION_STR в com/src/com.rs.
+-->
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <assemblyIdentity
+      type="win32"
+      name="PetrovichCom.Client"
+      version="1.0.0.0" />
+  <file name="petrovich_com.dll">
+    <comClass
+        clsid="{E4B2C1A0-5D6F-4A7B-8C9D-0E1F2A3B4C5D}"
+        threadingModel="Apartment" />
+    <progid>Padeg.Declension</progid>
+    <progid>Petrovich.Declension</progid>
+  </file>
+  <comInterfaceExternalProxyStub
+      name="IDispatch"
+      iid="{00020400-0000-0000-C000-000000000046}"
+      proxyStubClsid32="{00020424-0000-0000-C000-000000000046}"
+      baseInterface="{00000000-0000-0000-C000-000000000046}" />
+</assembly>

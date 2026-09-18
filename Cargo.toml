@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = [".", "cli", "web"]
+members = [".", "cli", "web", "com"]
 
 [package]
 name = "petrovich-core"

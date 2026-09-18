@@ -1,0 +1,14 @@
+[package]
+name = "petrovich-com"
+version = "0.2.0"
+authors = ["road21 <amtroitskiy@gmail.com>"]
+description = "Drop-in COM replacement for padeg.dll Declension (no admin install, x86+x64)"
+license = "MIT"
+edition = "2024"
+
+[lib]
+name = "petrovich_com"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+petrovich-core = { path = ".." }

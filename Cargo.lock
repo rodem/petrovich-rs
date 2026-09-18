@@ -90,6 +90,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "petrovich-com"
+version = "0.2.0"
+dependencies = [
+ "petrovich-core",
+]
+
+[[package]]
 name = "petrovich-core"
 version = "0.2.0"
 dependencies = [

@@ -11,6 +11,7 @@
 | `petrovich-core` (корень) | библиотека `petrovich` | склонение + определение пола |
 | `cli/` | бинарь `petrovich` | командная строка, batch-режим |
 | `web/` | бинарь `petrovich-web` | HTTP-сервис для 1С/VBScript/скриптов |
+| `com/` | `petrovich_com.dll` x86+x64 | drop-in замена padeg.dll (`Padeg.Declension`, без админа) |
 
 > Старая версия `petrovich = "0.2"` на crates.io — заброшенный форк.
 > Публикация обновлённой версии запланирована на релиз (см. `PLAN.md`, этап 5);
@@ -200,12 +201,23 @@ docker build -f web/Dockerfile -t petrovich-web .
 docker run --rm -p 8080:8080 petrovich-web
 ```
 
+## COM (`petrovich-com`)
+
+Drop-in замена `padeg.dll`: `CreateObject("Padeg.Declension")` + 4 метода
+(`GetSex`, `GetFIOPadegFS`, `GetNominativePadeg`, `GetAppointmentPadeg`).
+Без прав администратора (регистрация только в HKCU), сборки x86 и x64,
+сборка только MSVC-таргетом. Детали, ограничения и установка —
+в [`com/README.md`](com/README.md), план — в [`PLAN-COM.md`](PLAN-COM.md).
+
 ## Проверки
 
 ```sh
 cargo test --locked --workspace        # юниты + golden-тесты паритета с Ruby-эталоном
 cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo fmt --check
+# COM отдельно (только MSVC, оба битности):
+cargo test -p petrovich-com --target x86_64-pc-windows-msvc
+cargo test -p petrovich-com --target i686-pc-windows-msvc
 ```
 
-План работ, детали паритета с эталоном и отложенный COM-этап — в [`PLAN.md`](PLAN.md).
+План работ и детали паритета с эталоном — в [`PLAN.md`](PLAN.md).

@@ -189,12 +189,12 @@ WinLibs/MSYS2 ради этого не ставим; для 3 GET-роутов �
 
 ---
 
-## Этап 4. petrovich-com — ВЫНЕСЕН В ОТДЕЛЬНЫЙ ПЛАН (решение 2026-09-18)
+## Этап 4. petrovich-com — ✅ ВЫПОЛНЕН 2026-09-19 (план: `PLAN-COM.md`)
 
-COM drop-in (4 метода `Declension`, ProgID/CLSID, MSVC-тулчейн, x86/x64,
-`EOleException`) — в отдельный файл `PLAN-COM.md` перед стартом этапа 4.
-Предусловия: реальная `padeg.dll`, реестр заказчика, разрядность 1С-клиента.
-Текущий workspace до COM не дотрагивается.
+COM drop-in реализован: крейт `com/` (`petrovich-com`), ручной IDispatch
+без внешних crate, сборка только MSVC (`x86_64` + `i686`), регистрация
+только HKCU (без админа), все E2E зелёные (PowerShell/VBScript × x64/x86).
+Детали, контракт и ловушки — в `PLAN-COM.md` и `com/README.md`.
 
 <details><summary>Старый текст этапа 4 (архив, раскрыть при создании PLAN-COM.md)</summary>
 
