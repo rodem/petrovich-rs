@@ -1,0 +1,17 @@
+[package]
+name = "petrovich-web"
+version = "0.2.0"
+edition = "2024"
+description = "Minimal std-only HTTP service over petrovich-core (for 1C/VBScript clients)"
+license = "MIT"
+
+[[bin]]
+name = "petrovich-web"
+path = "src/main.rs"
+
+[lib]
+name = "petrovich_web"
+path = "src/lib.rs"
+
+[dependencies]
+petrovich-core = { path = ".." }

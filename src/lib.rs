@@ -32,25 +32,17 @@
 //! ```
 
 mod gender;
-pub use gender::{detect_gender, Gender};
+pub use gender::{Gender, detect_gender};
 
 pub mod deprecated;
 pub use deprecated::*;
 
 type Modifier = Option<(usize, &'static str)>;
 
-#[derive(Eq, PartialEq, Copy, Clone)]
-enum RuleTag {
-    FirstWord,
-}
-
-use RuleTag::*;
-
 struct Rule {
     gender: Gender,
     test: &'static [&'static str],
     mods: [Modifier; 5],
-    tags: &'static [RuleTag],
 }
 
 impl Rule {
@@ -58,20 +50,31 @@ impl Rule {
         self.mods[case as usize]
     }
 
-    fn has_tag(&self, tag: RuleTag) -> bool {
-        self.tags.contains(&tag)
-    }
-
     fn fully_matches(&self, name: &str) -> bool {
-        self.test.iter().any(|&test| test == name)
+        self.test.contains(&name)
     }
 
     fn suffix_matches(&self, name: &str) -> bool {
         self.test.iter().any(|&test| name.ends_with(test))
     }
+}
 
-    fn gender_matches(&self, gender: Gender) -> bool {
-        self.gender == gender || self.gender == Gender::Androgynous
+/// Port of `Petrovich::Case::Rule#match?` gender logic.
+///
+/// With explicitly known gender only exact-gender rules match; otherwise
+/// female rules match female requests only, and non-female rules match
+/// non-female requests (Ruby treats this as the "unknown gender" branch).
+fn gender_matches(rule_gender: Gender, requested: Gender, known_gender: bool) -> bool {
+    if known_gender {
+        rule_gender == requested
+    } else {
+        if rule_gender != Gender::Female && requested == Gender::Female {
+            return false;
+        }
+        if rule_gender == Gender::Female && requested != Gender::Female {
+            return false;
+        }
+        true
     }
 }
 
@@ -103,35 +106,35 @@ pub enum Case {
     Prepositional,
 }
 
-// Find exception by name and gender
-fn find_exception<'a>(
-    exceptions: &'a [Rule],
+// First match in file order within one pass (exceptions precede suffixes,
+// exactly like Ruby's flat `@case_rules` list).
+fn find_in_lists<'a>(
+    rule_list: &'a RuleList,
     name: &str,
     gender: Gender,
-    is_last: bool,
+    known_gender: bool,
 ) -> Option<&'a Rule> {
-    // Search exceptions with matching name and gender
-    exceptions.iter().find(|&exception| {
-        exception.fully_matches(name)
-            && exception.gender_matches(gender)
-            && (!exception.has_tag(FirstWord) || !is_last)
-    })
+    rule_list
+        .exceptions
+        .iter()
+        .find(|rule| rule.fully_matches(name) && gender_matches(rule.gender, gender, known_gender))
+        .or_else(|| {
+            rule_list.suffixes.iter().find(|rule| {
+                rule.suffix_matches(name) && gender_matches(rule.gender, gender, known_gender)
+            })
+        })
 }
 
-// Find suffix by name and gender
-fn find_suffix<'a>(suffixes: &'a [Rule], name: &str, gender: Gender) -> Option<&'a Rule> {
-    suffixes
-        .iter()
-        .filter(|&suffix| suffix.suffix_matches(name) && suffix.gender_matches(gender))
-        .max_by_key(|&rule| {
-            // Find longest match
-            rule.test
-                .iter()
-                .filter(|&&test| name.ends_with(test))
-                .max_by_key(|&&test| test.len())
-                .unwrap()
-                .len()
-        })
+// Port of `RuleSet#find_case_rule`: exact-gender pass first, then the
+// `:androgynous` fallback pass.
+fn find_rule<'a>(
+    rule_list: &'a RuleList,
+    name: &str,
+    gender: Gender,
+    known_gender: bool,
+) -> Option<&'a Rule> {
+    find_in_lists(rule_list, name, gender, known_gender)
+        .or_else(|| find_in_lists(rule_list, name, Gender::Androgynous, false))
 }
 
 fn inflect(name: &str, rule: &Rule, case: Case) -> String {
@@ -154,10 +157,9 @@ fn inflect_name_part(
     is_last: bool,
 ) -> Option<String> {
     let lowercase_name = name.to_lowercase();
-    // First let's check for exceptions
-    find_exception(rule_list.exceptions, &lowercase_name, gender, is_last)
-        // Then check for suffixes
-        .or(find_suffix(rule_list.suffixes, &lowercase_name, gender))
+    // Gender is always passed explicitly through the public API, but Ruby
+    // scopes it to the last hyphen part (`known_gender`), mirroring that.
+    find_rule(rule_list, &lowercase_name, gender, is_last)
         // Then inflect name using matched rule
         .map(|rule| inflect(name, rule, case))
 }
@@ -385,9 +387,18 @@ mod tests {
         assert_eq!(detect_gender(None, None, Some("Олегович")), Gender::Male);
         assert_eq!(detect_gender(None, None, Some("Олеговна")), Gender::Female);
         assert_eq!(detect_gender(None, None, Some("Сергеевич")), Gender::Male);
-        assert_eq!(detect_gender(None, None, Some("Степаныч")), Gender::Male);
+        assert_eq!(
+            detect_gender(None, None, Some("Степаныч")),
+            Gender::Androgynous
+        );
         assert_eq!(detect_gender(None, None, Some("Петровна")), Gender::Female);
         assert_eq!(detect_gender(None, None, Some("Оно")), Gender::Androgynous);
+        // Empty strings vote nothing (Ruby `"".split('-') == []`).
+        assert_eq!(
+            detect_gender(Some("Склифасовская"), Some("Александра"), Some("")),
+            Gender::Female
+        );
+        assert_eq!(detect_gender(Some(""), None, None), Gender::Androgynous);
     }
 
     #[test]

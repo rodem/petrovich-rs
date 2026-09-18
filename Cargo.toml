@@ -1,5 +1,9 @@
+[workspace]
+resolver = "3"
+members = [".", "cli", "web"]
+
 [package]
-name = "petrovich"
+name = "petrovich-core"
 version = "0.2.0"
 authors = ["latrasis <jacobapayne@gmail.com>","road21 <amtroitskiy@gmail.com>", "broadwaylamb"]
 repository = "https://github.com/Latrasis/petrovich-rs"
@@ -7,8 +11,19 @@ readme = "README.md"
 keywords = ["petrovich", "russian", "inflection"]
 description = "Petrovich is library which inflects Russian names to given grammatical case. It supports first names, last names and middle names inflections."
 license = "MIT"
-edition = "2018"
+edition = "2024"
+
+[[test]]
+name = "golden_declension"
+path = "tests/golden_declension.rs"
+
+[[test]]
+name = "golden_gender"
+path = "tests/golden_gender.rs"
+
+[lib]
+name = "petrovich"
 
 [build-dependencies]
 serde = { version = "1.0.105", features = ["derive"] }
-serde_yaml = "0.8.11"
+serde_yaml = { package = "serde_yaml_ng", version = "0.10.0" }

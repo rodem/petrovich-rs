@@ -1,3 +1,5 @@
+#![allow(unexpected_cfgs, non_local_definitions)]
+
 use serde::Deserialize;
 use std::io::{BufReader, BufWriter, Write};
 
@@ -11,19 +13,14 @@ enum Gender {
     Androgynous,
 }
 
-#[derive(Deserialize, Debug)]
-enum RuleTag {
-    #[serde(rename(deserialize = "first_word"))]
-    FirstWord,
-}
-
 #[derive(Deserialize)]
 struct Rule {
     gender: Gender,
     test: Vec<String>,
     mods: [String; 5],
-    #[serde(default = "Vec::new")]
-    tags: Vec<RuleTag>,
+    // NOTE: `tags` (e.g. `first_word`) are intentionally ignored: the Ruby
+    // etalon discards them as well (`@tags = []`), so rules apply to every
+    // hyphen part. Serde skips unknown fields by default.
 }
 
 #[derive(Deserialize)]
@@ -64,7 +61,6 @@ fn generate_rule(rule: &Rule, output: &mut impl Write) -> std::io::Result<()> {
         }
     }
     writeln!(output, "                ],")?;
-    writeln!(output, "                tags: &{:?}", &rule.tags)?;
     writeln!(output, "            }},")
 }
 
@@ -122,43 +118,67 @@ struct GenderHeuristicsList {
     gender: GenderHeuristics,
 }
 
-fn generate_gender_rules(rules: &[String], output: &mut impl Write) -> std::io::Result<()> {
-    for rule in rules {
-        writeln!(output, "                {:?},", rule)?;
-    }
-    Ok(())
-}
-
-fn generate_gender_mapping(
-    mapping: &GenderMapping,
-    output: &mut impl Write,
-) -> std::io::Result<()> {
-    writeln!(output, "            androgynous: &[")?;
-    generate_gender_rules(&mapping.androgynous, output)?;
-    writeln!(output, "            ],")?;
-    writeln!(output, "            male: &[")?;
-    generate_gender_rules(&mapping.male, output)?;
-    writeln!(output, "            ],")?;
-    writeln!(output, "            female: &[")?;
-    generate_gender_rules(&mapping.female, output)?;
-    writeln!(output, "            ],")
-}
-
+/// Port of `RuleSet#load_gender_rules!`: exceptions merged into one ordered
+/// list (sections androgynous, male, female — last write wins on lookup),
+/// suffixes flattened and stable-sorted by length descending (`-accuracy`).
 fn generate_gender_heuristic(
     heuristic: &GenderHeuristic,
     output: &mut impl Write,
 ) -> std::io::Result<()> {
     writeln!(output, "GenderHeuristic {{")?;
-    if let Some(mapping) = &heuristic.exceptions {
-        writeln!(output, "        exceptions: Some(GenderMapping {{")?;
-        generate_gender_mapping(mapping, output)?;
-        writeln!(output, "        }}),")?;
-    } else {
-        writeln!(output, "        exceptions: None,")?;
+
+    let empty = GenderMapping {
+        androgynous: Vec::new(),
+        male: Vec::new(),
+        female: Vec::new(),
+    };
+    let exceptions = heuristic.exceptions.as_ref().unwrap_or(&empty);
+    let ordered: &[(&[String], &str)] = &[
+        (&exceptions.androgynous, "Androgynous"),
+        (&exceptions.male, "Male"),
+        (&exceptions.female, "Female"),
+    ];
+    // Last write wins in Ruby's dict; dedupe here keeping the last occurrence.
+    let mut seen = std::collections::HashSet::new();
+    let mut merged: Vec<(&str, &str)> = Vec::new();
+    for (list, gender) in ordered {
+        for name in list.iter() {
+            merged.push((name, gender));
+        }
     }
-    writeln!(output, "        suffixes: GenderMapping {{")?;
-    generate_gender_mapping(&heuristic.suffixes, output)?;
-    writeln!(output, "        }},")?;
+    let deduped: Vec<(&str, &str)> = merged
+        .iter()
+        .rev()
+        .filter(|(name, _)| seen.insert(*name))
+        .rev()
+        .copied()
+        .collect();
+    writeln!(output, "        exceptions: &[")?;
+    for (name, gender) in &deduped {
+        writeln!(output, "            ({name:?}, Gender::{gender}),")?;
+    }
+    writeln!(output, "        ],")?;
+
+    let mut suffixes: Vec<(&str, &str)> = Vec::new();
+    for (list, gender) in [
+        (&heuristic.suffixes.androgynous, "Androgynous"),
+        (&heuristic.suffixes.male, "Male"),
+        (&heuristic.suffixes.female, "Female"),
+    ] {
+        for suffix in list {
+            suffixes.push((suffix, gender));
+        }
+    }
+    // Stable sort by char length descending = Ruby's `sort_by! { -accuracy }`.
+    suffixes.sort_by_key(|(suffix, _)| std::cmp::Reverse(suffix.chars().count()));
+    writeln!(output, "        suffixes: &[")?;
+    for (suffix, gender) in &suffixes {
+        writeln!(
+            output,
+            "            GenderRule {{ gender: Gender::{gender}, suffix: {suffix:?} }},"
+        )?;
+    }
+    writeln!(output, "        ],")?;
     writeln!(output, "    }},")
 }
 
@@ -195,6 +215,7 @@ fn main() -> std::io::Result<()> {
     let rules_file = std::fs::OpenOptions::new()
         .write(true)
         .create(true)
+        .truncate(true)
         .open(Path::new(&out_dir).join("rules.inc"))?;
     generate_rules(&rules, &mut BufWriter::new(rules_file))?;
 
@@ -204,6 +225,7 @@ fn main() -> std::io::Result<()> {
     let gender_file = std::fs::OpenOptions::new()
         .write(true)
         .create(true)
+        .truncate(true)
         .open(Path::new(&out_dir).join("gender.inc"))?;
     generate_gender(&gender.gender, &mut BufWriter::new(gender_file))
 }
