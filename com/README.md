@@ -39,6 +39,28 @@ powershell -ExecutionPolicy Bypass -File com\install-user.ps1 -Test        # + E
 powershell -ExecutionPolicy Bypass -File com\uninstall-user.ps1            # снять регистрацию
 ```
 
+## Если запуск ps1 запрещён политикой
+
+`ExecutionPolicy` касается только PowerShell-скриптов. Рядом лежат
+`.cmd`-двойники с той же логикой (чистый batch, политики не касается):
+
+```bat
+com\install-user.cmd            :: регистрация обеих DLL, Release
+com\install-user.cmd Debug      :: то же для Debug-сборок
+com\uninstall-user.cmd          :: снять регистрацию
+```
+
+E2E-проверка без PowerShell — расширенный VBScript (оба ProgID, все методы,
+ошибка на неверном падеже; требует UTF-16 с BOM — так и лежит):
+
+```bat
+cscript //nologo com\test\test_padeg.vbs                        :: x64
+C:\Windows\SysWOW64\cscript.exe //nologo com\test\test_padeg.vbs :: x86
+```
+
+Вердикт — строка `E2E VBS RESULT=PASS` + код выхода `0`. (Если запрещён и
+`cscript`, остаётся ручная проверка из 1С/VBA по примеру Directum.)
+
 Скрипт вызывает `DllRegisterServer` обеих DLL через `rundll32`; DLL пишет
 **только** `HKCU\Software\Classes` (для x86-клиентов — вид `Wow6432Node`,
 через 32-битный `rundll32` из `SysWOW64`). HKLM не трогается, UAC нет.
@@ -57,7 +79,7 @@ powershell -ExecutionPolicy Bypass -File com\uninstall-user.ps1            # с�
 ```bat
 cargo test -p petrovich-com --target x86_64-pc-windows-msvc   :: 13 тестов: адаптер + COM in-process
 powershell -ExecutionPolicy Bypass -File com\test\test_com.ps1  :: E2E обоих ProgID (x64; 32-битным powershell — x86)
-cscript //nologo com\test\test_padeg.vbs                        :: 1в1 по примеру Directum
+cscript //nologo com\test\test_padeg.vbs                        :: полный E2E без PowerShell (20 проверок)
 ```
 
 ## Ловушки реализации (зафиксировано отладкой 2026-09-19)

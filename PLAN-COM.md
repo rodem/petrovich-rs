@@ -71,6 +71,8 @@ Somest  = Decl.GetFIOPadegFS(FIO, "", 5)   ' творительный
   (доставить `rustup target add`, проверить stdcall-декорации на линковке).
 
 ### Этап C3. Установка без админа ✅ 2026-09-19
+Дополнение: `.cmd`-двойники install/uninstall на случай запрета `ps1`
+политикой; `test_padeg.vbs` расширен до полного E2E (20 проверок).
 - `com/install-user.ps1`: определяет разрядность ОС, регистрирует x64 DLL
   всегда + x86 DLL (виды `HKCU\Software\Classes\CLSID` и `...\Wow6432Node\CLSID`,
   `InprocServer32` с полным путём, `ProgID` + `Petrovich.Declension`,
