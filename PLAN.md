@@ -69,9 +69,15 @@
   ~12.7k гендерных записей, формат `lemma<TAB>word<TAB>grammemes`,
   граммемы `мр/жр/0/им/рд/дт/вн/тв/пр`); задача `rake evaluate` в
   `lib/tasks/evaluate.rake`. Для Rust — распарсить эти TSV в тесты этапа 1.
-- Окружение Rust (Windows): MSVC-линкер `link.exe` отсутствует, VS BuildTools
-  не ставятся (exit 1602) → используем `stable-x86_64-pc-windows-gnu`.
-  Для COM-этапа (x86/x64, msvc-цели) — отдельный вопрос, НЕ блокирует этапы 1–3.
+- Окружение Rust (Windows): изначально MSVC-линкер `link.exe` отсутствовал →
+  использовали `stable-x86_64-pc-windows-gnu`. **Обновление 2026-09-19:**
+  VS 2022 BuildTools 17.14 + SDK 10.0.22621 на месте, весь workspace переведён
+  на MSVC (`rustup override set stable-x86_64-pc-windows-msvc` для каталога;
+  глобальный default не тронут). Причины: COM собирается только MSVC; релизные
+  бинари в 3–5 раз меньше (petrovich.exe 703 КБ против 2057 КБ на gnu);
+  единый тулчейн вместо двух; разблокирован путь к `windows-sys`-зависимостям
+  (clap-color, axum — при необходимости). gnu-совместимость кода сохраняется
+  (проверено сборкой), таргет `i686-pc-windows-msvc` доставлен для x86.
 - Базлайн-проверки после смены тулчейна: `cargo test` — 7+1 ok;
   `cargo clippy --all-targets -- -D warnings` — ok (поправлены `since = "0.2.0"`
   в deprecated.rs, `contains()` в lib.rs, `truncate(true)` + `&` в build.rs);
