@@ -9,6 +9,9 @@
 //!   tab-separated in nominative…prepositional order
 //! - `/api/v1/decline?...` → JSON object with the three parts
 //! - `/api/v1/gender?...` → `{"gender":"…"}` (`application/json`)
+//! - `/appoint?appointment=&office=&case=` → declined job title
+//!   (`office` optional, merged after the title)
+//! - `/api/v1/appoint?...` → `{"appointment":"…"}` (`application/json`)
 //!
 //! `case` accepts English names (`genitive`, …) or padeg-style numbers
 //! 1–6 (1 = nominative … 6 = prepositional). `sex` accepts
@@ -197,6 +200,29 @@ fn escape_json(value: &str) -> String {
     out
 }
 
+/// `/appoint` / `/api/v1/appoint`: job titles via the core
+/// (`petrovich::decline_appointment` / `decline_full_appointment`).
+/// Only the title head-word inflects (Directum article semantics);
+/// `office`, when present, is merged unchanged after the title.
+fn appoint(params: &HashMap<String, String>, json: bool) -> Response {
+    let Some(appointment) = param(params, "appointment") else {
+        return Response::bad("appointment is required".to_owned());
+    };
+    let case = match parse_case(params.get("case").map(String::as_str).unwrap_or("")) {
+        Ok(case) => case,
+        Err(message) => return Response::bad(message),
+    };
+    let value = match param(params, "office") {
+        Some(office) => petrovich::decline_full_appointment(&appointment, &office, case),
+        None => petrovich::decline_appointment(&appointment, case),
+    };
+    if json {
+        Response::json(format!("{{\"appointment\":\"{}\"}}", escape_json(&value)))
+    } else {
+        Response::ok(value)
+    }
+}
+
 fn decline_value(part: &str, kind: u8, gender: Gender, case: Case) -> String {
     match kind {
         0 => petrovich::lastname(gender, part, case),
@@ -209,6 +235,9 @@ fn decline_value(part: &str, kind: u8, gender: Gender, case: Case) -> String {
 pub fn route(path: &str, params: &HashMap<String, String>) -> Response {
     if path == "/health" {
         return Response::ok("ok".to_owned());
+    }
+    if path == "/appoint" || path == "/api/v1/appoint" {
+        return appoint(params, path == "/api/v1/appoint");
     }
     let json = path == "/api/v1/decline" || path == "/api/v1/gender";
     if !matches!(
@@ -375,6 +404,26 @@ mod tests {
             response.body,
             "{\"lastname\":\"Иванову\",\"firstname\":\"\",\"middlename\":\"\"}"
         );
+    }
+
+    #[test]
+    fn appoint_title_and_office() {
+        let response = get("/appoint?appointment=генеральный директор&case=dative");
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body, "генеральному директор");
+        let response = get(
+            "/appoint?appointment=генеральный директор&office=департамента продаж&case=genitive",
+        );
+        assert_eq!(response.body, "генерального директор департамента продаж");
+    }
+
+    #[test]
+    fn appoint_json_and_errors() {
+        let response = get("/api/v1/appoint?appointment=начальник отдела&case=instrumental");
+        assert_eq!(response.content_type, "application/json; charset=utf-8");
+        assert_eq!(response.body, "{\"appointment\":\"начальником отдела\"}");
+        assert_eq!(get("/appoint").status, 400);
+        assert_eq!(get("/appoint?appointment=директор&case=9").status, 400);
     }
 
     #[test]

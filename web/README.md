@@ -28,17 +28,24 @@ petrovich-web --bind 0.0.0.0:8080     # слушать все интерфейс
 | `/cases` | `/cases?firstname=Иван&sex=male` | 6 cases, tab-separated, nominative…prepositional |
 | `/api/v1/decline` | same params as `/decline` | `{"lastname":"…","firstname":"…","middlename":"…"}` (`application/json`) |
 | `/api/v1/gender` | same params as `/gender` | `{"gender":"…"}` |
+| `/appoint` | `/appoint?appointment=генеральный директор&case=dative` | `генеральному директор` (`text/plain`) |
+| `/api/v1/appoint` | same params as `/appoint` | `{"appointment":"…"}` (`application/json`) |
 
 Params:
 
 - `case`: `nominative|genitive|dative|accusative|instrumental|prepositional`
   or `1`–`6` (padeg-style; also `им|рд|дт|вн|тв|пр`). Default: nominative
-  (identity) for `/decline`; omitted for `/cases` (returns all six anyway).
+  (identity) for `/decline` and `/appoint`; omitted for `/cases`
+  (returns all six anyway).
 - `sex`: `male|female|auto` (also `m|f|м|ж`, empty = `auto` — detected
   from the given parts).
+- `appointment`: job title (required for `/appoint`); `office`: department,
+  merged unchanged after the title. Only the title head-word inflects
+  (Directum article semantics).
 
 Errors are `400 text/plain` with a message; unknown routes are `404`.
-At least one of `lastname|firstname|middlename` is required.
+At least one of `lastname|firstname|middlename` is required (or
+`appointment` for `/appoint`).
 
 ## 1C example
 
