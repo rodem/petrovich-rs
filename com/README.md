@@ -6,14 +6,25 @@ COM-сервер автоматизации поверх `petrovich-core`. Су�
 
 Подробный план и контракт — в [`../PLAN-COM.md`](../PLAN-COM.md).
 
-## Методы
+## Методы COM (`PadegUCA.Declension` — первичный по доке v4.1; также
+`Padeg.Declension`, `Petrovich.Declension`)
 
 | Метод | Параметры | Возврат |
 |---|---|---|
-| `GetSex(FIO)` | полное ФИО | `Integer`: `1` = мужской, `0` = женский/не определён |
-| `GetFIOPadegFS(FIO, Sex, Padeg)` | `"Фамилия Имя Отчество"`, пол (`""`/`auto`/`м*`/`ж*`, регистронезависимо), падеж `1`–`6` | склонённое ФИО |
-| `GetNominativePadeg(FIO)` | ФИО | вход без изменений (ограничение ядра — см. `PLAN-COM.md`) |
-| `GetAppointmentPadeg(Appointment, Padeg)` | должность, падеж `1`–`6` | вход без изменений (ограничение ядра — см. `PLAN-COM.md`) |
+| `GetSex(FIO)` | полное ФИО | `Integer`: `1`/`0`/`-1` (неизвестно), как в доке |
+| `GetFIOPadegFS(FIO, Sex, Padeg)` | `"Фамилия Имя Отчество"`, пол (`""`/`auto`/`м*`/`ж*`), падеж `1`–`6` | склонённое ФИО |
+| `GetFIOPadeg(LN, FN, MN, Sex, Padeg)` | части раздельно | склонённое ФИО |
+| `GetIFPadeg(FN, LN, Sex, Padeg)` / `GetIFPadegFS(IF, Sex, Padeg)` | порядок «имя фамилия»; последнее слово — фамилия | склонение |
+| `SeparateFIO(FIO, out LN, FN, MN)` | процедура | разбивка |
+| `GetNominativePadeg(FIO)` | ФИО | вход без изменений (ограничение ядра) |
+| `GetAppointmentPadeg(App, Padeg)` | должность | первое слово склоняется (см. находки) |
+| `GetOfficePadeg(Office, Padeg)` | подразделение | первое слово склоняется |
+| `GetFullAppointmentPadeg(App, Office, Padeg)` | оба | склейка без дублей + склонение |
+| `SetDictionary` / `Update_Exceptions` / `GetExceptionsFileName` | — | `false` / `true` / `""` (словаря нет, честно) |
+
+Ошибки: `EXCEPINFO.scode` = код padeg (`-1` падеж, `-2` род).
+Плоские C-экспорты (`stdcall`, UTF-16): все вышеплюс `GetFIOPadegAS/FSAS`,
+`GetFIOParts`, `GetPadegID` (`0`), словарь — см. `src/capi.rs` и доку v4.1 §4.
 
 `Padeg`: `1` именительный, `2` родительный, `3` дательный, `4` винительный,
 `5` творительный, `6` предложный. Неверный падеж/пол → COM-ошибка с текстом

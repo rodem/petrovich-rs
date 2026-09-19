@@ -35,6 +35,9 @@ pub const CLSID_DECLENSION: GUID = GUID {
 };
 pub const CLSID_DECLENSION_STR: &str = "{E4B2C1A0-5D6F-4A7B-8C9D-0E1F2A3B4C5D}";
 
+/// Первичный ProgID по доке v4.1 §5.
+pub const PROGID_PADEG_UCA: &str = "PadegUCA.Declension";
+/// ProgID v3.x (пример Directum) — drop-in для старого кода.
 pub const PROGID_PADEG: &str = "Padeg.Declension";
 pub const PROGID_PETROVICH: &str = "Petrovich.Declension";
 pub const FRIENDLY_NAME: &str = "Petrovich Declension (padeg-compatible)";
@@ -63,6 +66,16 @@ const DISPID_GETSEX: i32 = 1;
 const DISPID_GETFIOPADEGFS: i32 = 2;
 const DISPID_GETNOMINATIVEPADEG: i32 = 3;
 const DISPID_GETAPPOINTMENTPADEG: i32 = 4;
+// Добавочные методы — только append, 1–6 заморожены (совместимость).
+const DISPID_GETOFFICEPADEG: i32 = 5;
+const DISPID_GETFULLAPPOINTMENTPADEG: i32 = 6;
+const DISPID_GETFIOPADEG: i32 = 7;
+const DISPID_GETIFPADEG: i32 = 8;
+const DISPID_GETIFPADEGFS: i32 = 9;
+const DISPID_SEPARATEFIO: i32 = 10;
+const DISPID_SETDICTIONARY: i32 = 11;
+const DISPID_UPDATE_EXCEPTIONS: i32 = 12;
+const DISPID_GETEXCEPTIONSFILENAME: i32 = 13;
 
 // ---------------------------------------------------------------------------
 // HRESULT / VARTYPE
@@ -278,6 +291,51 @@ fn variant_set_i4(v: *mut VARIANT, value: i32) {
         (*v).data1 = (value as u32) as usize;
         (*v).data2 = 0;
     }
+}
+
+/// VARIANT_BOOL: TRUE = -1 (0xFFFF), FALSE = 0.
+fn variant_set_bool(v: *mut VARIANT, value: bool) {
+    unsafe {
+        (*v).vt = VT_BOOL;
+        (*v).data1 = if value { 0xFFFF } else { 0 };
+        (*v).data2 = 0;
+    }
+}
+
+/// Запись строки в out-параметр (SeparateFIO): принимает `VT_BSTR|VT_BYREF`
+/// (пишем BSTR* напрямую) и `VT_VARIANT|VT_BYREF` (кладём BSTR во вложенный
+/// VARIANT). Остальное — TYPEMISMATCH.
+fn variant_write_string(v: *mut VARIANT, s: &str) -> Result<(), i32> {
+    let bstr = string_to_bstr(s);
+    if bstr.is_null() {
+        return Err(E_OUTOFMEMORY);
+    }
+    unsafe {
+        let outer = &mut *v;
+        let (vt, d1) = (outer.vt, outer.data1);
+        if vt == VT_BSTR | VT_BYREF && d1 != 0 {
+            let slot = d1 as *mut *mut u16;
+            if !(*slot).is_null() {
+                SysFreeString(*slot);
+            }
+            *slot = bstr;
+            return Ok(());
+        }
+        if vt == VT_VARIANT | VT_BYREF && d1 != 0 {
+            let inner = &mut *(d1 as *mut VARIANT);
+            if inner.vt == VT_BSTR && inner.data1 != 0 {
+                SysFreeString(inner.data1 as *mut u16);
+            }
+            inner.vt = VT_BSTR;
+            inner.data1 = bstr as usize;
+            inner.data2 = 0;
+            return Ok(());
+        }
+    }
+    unsafe {
+        SysFreeString(bstr);
+    }
+    Err(DISP_E_TYPEMISMATCH)
 }
 
 const VT_BYREF: u16 = 0x4000;
@@ -517,6 +575,15 @@ unsafe extern "system" fn dispatch_get_ids_of_names(
         "GETFIOPADEGFS" => DISPID_GETFIOPADEGFS,
         "GETNOMINATIVEPADEG" => DISPID_GETNOMINATIVEPADEG,
         "GETAPPOINTMENTPADEG" => DISPID_GETAPPOINTMENTPADEG,
+        "GETOFFICEPADEG" => DISPID_GETOFFICEPADEG,
+        "GETFULLAPPOINTMENTPADEG" => DISPID_GETFULLAPPOINTMENTPADEG,
+        "GETFIOPADEG" => DISPID_GETFIOPADEG,
+        "GETIFPADEG" => DISPID_GETIFPADEG,
+        "GETIFPADEGFS" => DISPID_GETIFPADEGFS,
+        "SEPARATEFIO" => DISPID_SEPARATEFIO,
+        "SETDICTIONARY" => DISPID_SETDICTIONARY,
+        "UPDATE_EXCEPTIONS" => DISPID_UPDATE_EXCEPTIONS,
+        "GETEXCEPTIONSFILENAME" => DISPID_GETEXCEPTIONSFILENAME,
         _ => return DISP_E_UNKNOWNNAME,
     };
     unsafe {
@@ -525,7 +592,9 @@ unsafe extern "system" fn dispatch_get_ids_of_names(
     S_OK
 }
 
-fn fill_excepinfo(excep: *mut EXCEPINFO, message: &str) {
+/// Заполнение EXCEPINFO. `scode` = код padeg (-1/-2, дока v4.1 §5:
+/// `EOleException.ErrorCode`), чтобы клиенты видели те же коды, что от padeg.
+fn fill_excepinfo(excep: *mut EXCEPINFO, code: i32, message: &str) {
     if excep.is_null() {
         return;
     }
@@ -538,11 +607,11 @@ fn fill_excepinfo(excep: *mut EXCEPINFO, message: &str) {
         (*excep).dwHelpContext = 0;
         (*excep).pvReserved = ptr::null_mut();
         (*excep).pfnDeferredFillIn = ptr::null_mut();
-        (*excep).scode = E_INVALIDARG;
+        (*excep).scode = code;
     }
 }
 
-fn invoke_arg(params: *mut DISPPARAMS, index_from_left: usize, c_args: usize) -> *const VARIANT {
+fn invoke_arg(params: *mut DISPPARAMS, index_from_left: usize, c_args: usize) -> *mut VARIANT {
     // rgvarg хранит аргументы в обратном порядке.
     unsafe { (*params).rgvarg.add(c_args - 1 - index_from_left) }
 }
@@ -573,14 +642,18 @@ unsafe extern "system" fn dispatch_invoke(
     enum InvokeOk {
         I4(i32),
         Str(String),
+        Bool(bool),
+        Empty,
     }
-    // Внутренний результат: Ok | (HRESULT, Option<текст для EXCEPINFO>).
-    type Outcome = Result<InvokeOk, (i32, Option<String>)>;
-    let plain = |hr: i32| (hr, None);
-    let fail = |e: adapter::PadegError| (DISP_E_EXCEPTION, Some(e.0));
+    // Внутренний результат: Ok | (HRESULT, scode, Option<текст для EXCEPINFO>).
+    // scode = код padeg (-1/-2), чтобы EOleException.ErrorCode совпадал с padeg.
+    type Outcome = Result<InvokeOk, (i32, i32, Option<String>)>;
+    let plain = |hr: i32| (hr, hr, None);
+    let fail = |e: adapter::PadegError| (DISP_E_EXCEPTION, e.code, Some(e.message));
 
     let outcome: Outcome = match std::panic::catch_unwind(AssertUnwindSafe(|| {
         let get = |i: usize| unsafe { &*invoke_arg(params, i, c_args) };
+        let get_mut = |i: usize| invoke_arg(params, i, c_args);
         match dispid {
             DISPID_GETSEX => {
                 if c_args != 1 {
@@ -617,17 +690,106 @@ unsafe extern "system" fn dispatch_invoke(
                     .map(InvokeOk::Str)
                     .map_err(fail)
             }
+            DISPID_GETFIOPADEG => {
+                if c_args != 5 {
+                    return Err(plain(DISP_E_BADPARAMCOUNT));
+                }
+                let ln = variant_to_string(get(0)).map_err(plain)?;
+                let fn_ = variant_to_string(get(1)).map_err(plain)?;
+                let mn = variant_to_string(get(2)).map_err(plain)?;
+                let sex = variant_to_string(get(3)).map_err(plain)?;
+                let padeg = variant_to_i32(get(4)).map_err(plain)?;
+                adapter::get_fio_padeg(&ln, &fn_, &mn, &sex, padeg)
+                    .map(InvokeOk::Str)
+                    .map_err(fail)
+            }
+            DISPID_GETIFPADEG => {
+                if c_args != 4 {
+                    return Err(plain(DISP_E_BADPARAMCOUNT));
+                }
+                let fn_ = variant_to_string(get(0)).map_err(plain)?;
+                let ln = variant_to_string(get(1)).map_err(plain)?;
+                let sex = variant_to_string(get(2)).map_err(plain)?;
+                let padeg = variant_to_i32(get(3)).map_err(plain)?;
+                adapter::get_if_padeg(&fn_, &ln, &sex, padeg)
+                    .map(InvokeOk::Str)
+                    .map_err(fail)
+            }
+            DISPID_GETIFPADEGFS => {
+                if c_args != 3 {
+                    return Err(plain(DISP_E_BADPARAMCOUNT));
+                }
+                let if_ = variant_to_string(get(0)).map_err(plain)?;
+                let sex = variant_to_string(get(1)).map_err(plain)?;
+                let padeg = variant_to_i32(get(2)).map_err(plain)?;
+                adapter::get_if_padeg_fs(&if_, &sex, padeg)
+                    .map(InvokeOk::Str)
+                    .map_err(fail)
+            }
+            DISPID_SEPARATEFIO => {
+                // Procedure: SeparateFIO(FIO, out LN, out FN, out MN).
+                // Out-параметры приходят как VT_BYREF — пишем BSTR через ссылку.
+                if c_args != 4 {
+                    return Err(plain(DISP_E_BADPARAMCOUNT));
+                }
+                let fio = variant_to_string(get(0)).map_err(plain)?;
+                let (ln, fn_, mn) = adapter::get_fio_parts(&fio);
+                variant_write_string(get_mut(1), &ln).map_err(plain)?;
+                variant_write_string(get_mut(2), &fn_).map_err(plain)?;
+                variant_write_string(get_mut(3), &mn).map_err(plain)?;
+                Ok(InvokeOk::Empty)
+            }
+            DISPID_SETDICTIONARY => {
+                if c_args != 1 {
+                    return Err(plain(DISP_E_BADPARAMCOUNT));
+                }
+                let path = variant_to_string(get(0)).map_err(plain)?;
+                Ok(InvokeOk::Bool(adapter::set_dictionary(&path)))
+            }
+            DISPID_UPDATE_EXCEPTIONS => {
+                if c_args != 0 {
+                    return Err(plain(DISP_E_BADPARAMCOUNT));
+                }
+                Ok(InvokeOk::Bool(adapter::update_exceptions()))
+            }
+            DISPID_GETEXCEPTIONSFILENAME => {
+                if c_args != 0 {
+                    return Err(plain(DISP_E_BADPARAMCOUNT));
+                }
+                Ok(InvokeOk::Str(adapter::get_exceptions_file_name()))
+            }
+            DISPID_GETOFFICEPADEG => {
+                if c_args != 2 {
+                    return Err(plain(DISP_E_BADPARAMCOUNT));
+                }
+                let office = variant_to_string(get(0)).map_err(plain)?;
+                let padeg = variant_to_i32(get(1)).map_err(plain)?;
+                adapter::get_office_padeg(&office, padeg)
+                    .map(InvokeOk::Str)
+                    .map_err(fail)
+            }
+            DISPID_GETFULLAPPOINTMENTPADEG => {
+                if c_args != 3 {
+                    return Err(plain(DISP_E_BADPARAMCOUNT));
+                }
+                let app = variant_to_string(get(0)).map_err(plain)?;
+                let office = variant_to_string(get(1)).map_err(plain)?;
+                let padeg = variant_to_i32(get(2)).map_err(plain)?;
+                adapter::get_full_appointment_padeg(&app, &office, padeg)
+                    .map(InvokeOk::Str)
+                    .map_err(fail)
+            }
             _ => Err(plain(DISP_E_MEMBERNOTFOUND)),
         }
     })) {
         Ok(outcome) => outcome,
-        Err(_) => Err((E_FAIL, Some("внутренняя ошибка (panic)".to_owned()))),
+        Err(_) => Err((E_FAIL, E_FAIL, Some("внутренняя ошибка (panic)".to_owned()))),
     };
 
     match outcome {
-        Err((hr, msg)) => {
+        Err((hr, code, msg)) => {
             if hr == DISP_E_EXCEPTION {
-                fill_excepinfo(excep, msg.as_deref().unwrap_or("ошибка склонения"));
+                fill_excepinfo(excep, code, msg.as_deref().unwrap_or("ошибка склонения"));
             }
             hr
         }
@@ -645,6 +807,14 @@ unsafe extern "system" fn dispatch_invoke(
             }
             S_OK
         }
+        Ok(InvokeOk::Bool(value)) => {
+            if !result.is_null() {
+                variant_init(result);
+                variant_set_bool(result, value);
+            }
+            S_OK
+        }
+        Ok(InvokeOk::Empty) => S_OK,
     }
 }
 
@@ -862,8 +1032,8 @@ pub fn register_inproc_server(dll_path: &str) -> Result<(), String> {
         Some("ThreadingModel"),
         "Apartment",
     )?;
-    reg_write_value(&format!("{clsid_key}\\ProgID"), None, PROGID_PADEG)?;
-    for progid in [PROGID_PADEG, PROGID_PETROVICH] {
+    reg_write_value(&format!("{clsid_key}\\ProgID"), None, PROGID_PADEG_UCA)?;
+    for progid in [PROGID_PADEG_UCA, PROGID_PADEG, PROGID_PETROVICH] {
         let progid_key = format!("Software\\Classes\\{progid}");
         reg_write_value(&progid_key, None, FRIENDLY_NAME)?;
         reg_write_value(&format!("{progid_key}\\CLSID"), None, CLSID_DECLENSION_STR)?;
@@ -873,8 +1043,8 @@ pub fn register_inproc_server(dll_path: &str) -> Result<(), String> {
 
 pub fn unregister_inproc_server() -> Result<(), String> {
     reg_delete_tree(&format!("Software\\Classes\\CLSID\\{CLSID_DECLENSION_STR}"))?;
-    // ProgID удаляем безусловно: оба принадлежат нам (см. register_inproc_server).
-    for progid in [PROGID_PADEG, PROGID_PETROVICH] {
+    // Все три ProgID принадлежат нам (см. register_inproc_server).
+    for progid in [PROGID_PADEG_UCA, PROGID_PADEG, PROGID_PETROVICH] {
         reg_delete_tree(&format!("Software\\Classes\\{progid}"))?;
     }
     Ok(())
