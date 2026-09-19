@@ -225,11 +225,13 @@ docker run --rm -p 8080:8080 petrovich-web
 
 ## COM (`petrovich-com`)
 
-Drop-in замена `padeg.dll`: `CreateObject("Padeg.Declension")` + 4 метода
-(`GetSex`, `GetFIOPadegFS`, `GetNominativePadeg`, `GetAppointmentPadeg`).
+Drop-in замена `padeg.dll`: `CreateObject("PadegUCA.Declension")`
+(+ алиасы `Padeg.Declension`, `Petrovich.Declension`), весь вызываемый API
+по доке v4.1 — ФИО, должности/офисы, `SeparateFIO`, словарь-заглушки
+(DISPID 1–13) + плоские C-экспорты.
 Без прав администратора (регистрация только в HKCU), сборки x86 и x64,
 сборка только MSVC-таргетом. Детали, ограничения и установка —
-в [`com/README.md`](com/README.md), план — в [`PLAN-COM.md`](PLAN-COM.md).
+в [`com/README.md`](com/README.md), план — в [`PLAN.md`](PLAN.md) (§6–§7).
 
 ## Проверки
 
