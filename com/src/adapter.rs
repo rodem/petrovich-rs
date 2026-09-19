@@ -1,4 +1,4 @@
-//! Чистая (без Windows API) реализация 4 методов `Padeg.Declension` поверх
+﻿//! Чистая (без Windows API) реализация 4 методов `Padeg.Declension` поверх
 //! `petrovich-core`. Собирается и тестируется на любом таргете.
 //!
 //! Контракт зафиксирован в `PLAN-COM.md` по COM-примеру Directum:
@@ -289,178 +289,32 @@ pub fn set_dictionary(_path: &str) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// Должности и подразделения (M-tier, находки из примеров статьи Directum)
+// Должности и подразделения: логика живёт в ядре (`petrovich` crate,
+// модуль `appointment`), здесь только тонкие обёртки с padeg-кодами.
+// Зависимости строго com → lib.
 // ---------------------------------------------------------------------------
 
-/// Мужские существительные на согласную, обозначающие лицо (одушевлённые),
-/// чей винительный = родительному («вижу директора»). Точного списка у нас нет
-/// (нужен словарь padeg), поэтому ядро HR-должностей — эвристика с тестами.
-/// Остальные слова на согласную считаем неодушевлёнными (аккузатив = номинатив).
-const ANIMATE_TITLES: &[&str] = &[
-    "директор",
-    "менеджер",
-    "инженер",
-    "бухгалтер",
-    "секретарь",
-    "заместитель",
-    "руководитель",
-    "начальник",
-    "специалист",
-    "продавец",
-    "врач",
-    "учитель",
-    "мастер",
-    "редактор",
-    "конструктор",
-    "технолог",
-    "экономист",
-    "юрист",
-    "водитель",
-    "охранник",
-    "курьер",
-    "агент",
-    "кассир",
-    "кладовщик",
-    "грузчик",
-    "слесарь",
-    "токарь",
-    "повар",
-    "официант",
-    "администратор",
-    "оператор",
-    "программист",
-    "дизайнер",
-    "тренер",
-    "доктор",
-    "профессор",
-    "студент",
-    "клиент",
-    "пациент",
-    "свидетель",
-];
-
-/// Одушевлённость head-слова для винительного падежа: прилагательные на
-/// -ий/-ый/-ой (заведующий, генеральный) + лица из `ANIMATE_TITLES`.
-/// Остальные мужские существительные — неодушевлённые (аккузатив = номинатив:
-/// «Сектор»). Женский род склоняется без различий по одушевлённости.
-fn is_animate_head(head_lower: &str) -> bool {
-    head_lower.ends_with("ий")
-        || head_lower.ends_with("ый")
-        || head_lower.ends_with("ой")
-        || ANIMATE_TITLES.contains(&head_lower)
-}
-
-/// Слова общего рода на -а/-я, которые в должности по умолчанию мужские
-/// («судья вынес решение»). Без списка ушли бы в женский по окончанию.
-const MASCULINE_A_WORDS: &[&str] = &[
-    "судья",
-    "коллега",
-    "староста",
-    "сирота",
-    "папа",
-    "дядя",
-    "дедушка",
-    "мужчина",
-    "юноша",
-];
-
-/// Пол head-слова: детект ядра, при Androgynous — по окончанию (-а/-я, кроме
-/// `MASCULINE_A_WORDS`, → женский; иначе мужской). Ядро эвристик common nouns
-/// не знает (`начальница`, `медсестра` дают Androgynous), без fallback ушли бы
-/// в мужские правила с мусором на выходе.
-fn head_gender(word: &str) -> Gender {
-    match detect_gender(Some(word), None, None) {
-        Gender::Androgynous => {
-            let lower = word.to_lowercase();
-            if MASCULINE_A_WORDS.contains(&lower.as_str()) {
-                Gender::Male
-            } else if lower.ends_with('а') || lower.ends_with('я') {
-                Gender::Female
-            } else {
-                Gender::Male
-            }
-        }
-        g => g,
-    }
-}
-
-/// Склонение одного head-слова должности/подразделения.
-fn decline_head(word: &str, case: Case) -> String {
-    let gender = head_gender(word);
-    if case == Case::Accusative && gender == Gender::Male && !is_animate_head(&word.to_lowercase())
-    {
-        return word.to_owned();
-    }
-    lastname(gender, word, case)
-}
-
-/// Склонение составной строки: сегменты через `' - '`, в каждом склоняется
-/// только первое слово (подтверждено примерами статьи), остальное без изменений.
-fn decline_appointment_text(text: &str, case: Option<Case>) -> String {
-    text.split(" - ")
-        .map(|segment| {
-            let mut words = segment.split_whitespace();
-            match words.next() {
-                None => String::new(),
-                Some(head) => {
-                    let mut out = vec![match case {
-                        Some(case) => decline_head(head, case),
-                        None => head.to_owned(),
-                    }];
-                    out.extend(words.map(str::to_owned));
-                    out.join(" ")
-                }
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" - ")
-}
-
-/// `GetAppointmentPadeg(Appointment, Padeg) -> WideString`.
-///
-/// Склоняет первое слово каждого `' - '`-сегмента мужскими/авто правилами ядра,
-/// остальное без изменений (см. PLAN-COM-API.md §3).
+/// GetAppointmentPadeg(Appointment, Padeg) -> WideString.
 pub fn get_appointment_padeg(appointment: &str, padeg: i32) -> Result<String, PadegError> {
-    let case = case_of(padeg)?;
-    Ok(decline_appointment_text(appointment, case))
+    Ok(petrovich::decline_appointment(appointment, case_of(padeg)?))
 }
 
-/// `GetOfficePadeg(Office, Padeg)`: та же логика, что должности
-/// (пример статьи: `Сектор …` → `Сектора …`).
+/// GetOfficePadeg(Office, Padeg).
 pub fn get_office_padeg(office: &str, padeg: i32) -> Result<String, PadegError> {
-    let case = case_of(padeg)?;
-    Ok(decline_appointment_text(office, case))
+    Ok(petrovich::decline_office(office, case_of(padeg)?))
 }
 
-/// Нормализация слова для дедупликации: нижний регистр + срезанная конечная
-/// гласная (`цеха`/`Цех` → `цех`). Приближение стемминга padeg, расхождения —
-/// в дифф-харнес.
-fn stem_word(word: &str) -> String {
-    let lower = word.to_lowercase();
-    lower
-        .strip_suffix(|c: char| "аеёиоуыэюя".contains(c))
-        .unwrap_or(&lower)
-        .to_owned()
-}
-
-/// `GetFullAppointmentPadeg(Appointment, Office, Padeg)`: склейка с удалением
-/// слов офиса, уже есть в должности (сравнение по стемам, регистронезависимо),
-/// затем склонение как должность: `Начальник цеха` + `Цех …` → без дубля `Цех`.
+/// GetFullAppointmentPadeg(Appointment, Office, Padeg).
 pub fn get_full_appointment_padeg(
     appointment: &str,
     office: &str,
     padeg: i32,
 ) -> Result<String, PadegError> {
-    let case = case_of(padeg)?;
-    let app_words: Vec<&str> = appointment.split_whitespace().collect();
-    let stems: std::collections::HashSet<String> = app_words.iter().map(|w| stem_word(w)).collect();
-    let mut merged: Vec<&str> = app_words;
-    for word in office.split_whitespace() {
-        if !stems.contains(&stem_word(word)) {
-            merged.push(word);
-        }
-    }
-    Ok(decline_appointment_text(&merged.join(" "), case))
+    Ok(petrovich::decline_full_appointment(
+        appointment,
+        office,
+        case_of(padeg)?,
+    ))
 }
 
 /// `GetNominativePadeg(FIO) -> WideString`.

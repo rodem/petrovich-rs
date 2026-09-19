@@ -68,7 +68,7 @@ ProgID: первичный **`PadegUCA.Declension`** (дока v4.1 §5, при�
   дефисом (`инженер-конструктор`) склоняется независимо.
 - `GetFullAppointmentPadeg`: склейка с удалением дублей
   (`Начальник цеха` + `Цех …` → `Начальник цеха …`).
-- Реализация (`adapter.rs::decline_head`): head-word + `lastname(head_gender,
+- Реализация (ядро `src/appointment.rs::decline_head`, COM/CLI — тонкие обёртки): head-word + `lastname(head_gender,
   head, case)` ядра; пол — детект ядра, при Androgynous окончание -а/-я
   (кроме `MASCULINE_A_WORDS`: судья, коллега…) → женский, иначе мужской;
   винительный мужских: -ий/-ый/-ой и `ANIMATE_TITLES` (~40 лиц: директор,

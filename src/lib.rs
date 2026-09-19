@@ -34,6 +34,11 @@
 mod gender;
 pub use gender::{Gender, detect_gender};
 
+mod appointment;
+pub use appointment::{
+    decline_appointment, decline_full_appointment, decline_office, merge_appointment,
+};
+
 pub mod deprecated;
 pub use deprecated::*;
 

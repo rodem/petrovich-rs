@@ -92,18 +92,6 @@ enum CaseArg {
 }
 
 impl CaseArg {
-    /// Padeg number 1–6 for the COM adapter.
-    fn number(self) -> i32 {
-        match self {
-            CaseArg::Nominative => 1,
-            CaseArg::Genitive => 2,
-            CaseArg::Dative => 3,
-            CaseArg::Accusative => 4,
-            CaseArg::Instrumental => 5,
-            CaseArg::Prepositional => 6,
-        }
-    }
-
     fn case(self) -> Option<Case> {
         match self {
             CaseArg::Nominative => None,
@@ -179,16 +167,23 @@ fn decline_line(name: &NameArgs, gender: Gender, case: Option<Case>) -> Result<S
     Ok(decline_parts(name, gender, case).join(" "))
 }
 
-fn decline_appointment(appointment: &str, office: &str, padeg: i32) -> Result<String, String> {
+fn decline_appointment(
+    appointment: &str,
+    office: &str,
+    case: Option<Case>,
+) -> Result<String, String> {
     let appointment = appointment.trim();
     if appointment.is_empty() {
         return Err("--appointment is required".to_owned());
     }
     if office.trim().is_empty() {
-        petrovich_com::get_appointment_padeg(appointment, padeg).map_err(|e| e.to_string())
+        Ok(petrovich::decline_appointment(appointment, case))
     } else {
-        petrovich_com::get_full_appointment_padeg(appointment, office.trim(), padeg)
-            .map_err(|e| e.to_string())
+        Ok(petrovich::decline_full_appointment(
+            appointment,
+            office.trim(),
+            case,
+        ))
     }
 }
 
@@ -223,7 +218,7 @@ fn run_batch(source: &str, gender: GenderArg, case: Option<Case>) -> Result<(), 
     Ok(())
 }
 
-fn run_appoint_batch(source: &str, padeg: i32) -> Result<(), String> {
+fn run_appoint_batch(source: &str, case: Option<Case>) -> Result<(), String> {
     let input: Box<dyn Read> = if source == "-" {
         Box::new(std::io::stdin())
     } else {
@@ -242,7 +237,7 @@ fn run_appoint_batch(source: &str, padeg: i32) -> Result<(), String> {
         let appointment = fields.next().unwrap_or("");
         let office = fields.next().unwrap_or("");
         out.push_str(
-            &decline_appointment(appointment, office, padeg)
+            &decline_appointment(appointment, office, case)
                 .map_err(|e| format!("line {}: {e}", line_no + 1))?,
         );
         out.push('\n');
@@ -266,12 +261,12 @@ fn main() {
         }
         Command::Appoint(args) => {
             if let Some(batch) = &args.batch {
-                run_appoint_batch(batch, args.case.number())
+                run_appoint_batch(batch, args.case.case())
             } else {
                 decline_appointment(
                     args.appointment.as_deref().unwrap_or(""),
                     args.office.as_deref().unwrap_or(""),
-                    args.case.number(),
+                    args.case.case(),
                 )
                 .map(|line| {
                     println!("{line}");

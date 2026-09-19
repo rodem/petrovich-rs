@@ -86,7 +86,6 @@ name = "petrovich-cli"
 version = "0.2.0"
 dependencies = [
  "clap",
- "petrovich-com",
  "petrovich-core",
 ]
 
