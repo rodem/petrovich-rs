@@ -144,6 +144,28 @@ petrovich decline --case dative --gender auto --batch names.tsv
 # -> Склифасовской Александре
 
 cat names.tsv | petrovich decline --case dative --batch -  # stdin через `-`
+
+# Должности: склоняется первое слово, остальное без изменений.
+petrovich appoint --appointment "генеральный директор" --case dative
+# -> генеральному директор
+
+petrovich appoint --appointment "заведующий сектором" --case instrumental
+# -> заведующим сектором
+
+# Должность + подразделение: склейка без дублей («Цех» не повторяется).
+petrovich appoint --appointment "Начальник цеха" \
+  --office "Цех нестандартного оборудования" --case genitive
+# -> Начальника цеха нестандартного оборудования
+
+# Неодушевлённое в винительном не меняется:
+petrovich appoint --appointment "Сектор разработки" --case accusative
+# -> Сектор разработки
+
+# Batch для должностей: TSV `должность<TAB>подразделение`.
+printf 'генеральный директор\t\nНачальник цеха\tЦех нестандартного оборудования\n' > app.tsv
+petrovich appoint --case dative --batch app.tsv
+# -> генеральному директор
+# -> Начальнику цеха нестандартного оборудования
 ```
 
 Значения `--case`: `nominative|genitive|dative|accusative|instrumental|prepositional`

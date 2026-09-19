@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 petrovich-core = { path = ".." }
+petrovich-com = { path = "../com" }
 # NOTE: `color` is off — anstream's windows-sys dep needs dlltool, which the
 # gnu toolchain here lacks. Plain-text help is fine for 1C/scripts piping.
 clap = { version = "4", default-features = false, features = ["derive", "std", "help", "usage", "error-context", "suggestions"] }

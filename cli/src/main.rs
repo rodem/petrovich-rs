@@ -4,6 +4,8 @@
 //! petrovich decline --lastname Иванов --firstname Иван --case dative --gender male
 //! petrovich gender --firstname Александра
 //! petrovich decline --case instrumental --gender auto --batch names.tsv
+//! petrovich appoint --appointment "генеральный директор" --case dative
+//! petrovich appoint --appointment "Начальник цеха" --office "Цех нестандартного оборудования" --case genitive
 //! ```
 //!
 //! Batch input is TSV `lastname<TAB>firstname<TAB>middlename` (empty fields
@@ -30,6 +32,9 @@ enum Command {
     Decline(DeclineArgs),
     /// Detect gender of a name.
     Gender(NameArgs),
+    /// Inflect a job title, optionally merged with an office
+    /// (first word declines, the rest stays as is).
+    Appoint(AppointArgs),
 }
 
 #[derive(Parser)]
@@ -43,6 +48,22 @@ struct DeclineArgs {
     #[arg(long, value_enum, default_value_t = GenderArg::Auto)]
     gender: GenderArg,
     /// Batch mode: TSV file (or `-` for stdin), one name per line.
+    #[arg(long)]
+    batch: Option<String>,
+}
+
+#[derive(Parser)]
+struct AppointArgs {
+    /// Job title, e.g. "генеральный директор".
+    #[arg(long)]
+    appointment: Option<String>,
+    /// Office merged into the title (duplicates removed), e.g. "Цех ...".
+    #[arg(long)]
+    office: Option<String>,
+    /// Grammatical case.
+    #[arg(long, value_enum, default_value_t = CaseArg::Genitive)]
+    case: CaseArg,
+    /// Batch mode: TSV file (or `-` for stdin), `appointment<TAB>office` per line.
     #[arg(long)]
     batch: Option<String>,
 }
@@ -71,6 +92,18 @@ enum CaseArg {
 }
 
 impl CaseArg {
+    /// Padeg number 1–6 for the COM adapter.
+    fn number(self) -> i32 {
+        match self {
+            CaseArg::Nominative => 1,
+            CaseArg::Genitive => 2,
+            CaseArg::Dative => 3,
+            CaseArg::Accusative => 4,
+            CaseArg::Instrumental => 5,
+            CaseArg::Prepositional => 6,
+        }
+    }
+
     fn case(self) -> Option<Case> {
         match self {
             CaseArg::Nominative => None,
@@ -146,6 +179,19 @@ fn decline_line(name: &NameArgs, gender: Gender, case: Option<Case>) -> Result<S
     Ok(decline_parts(name, gender, case).join(" "))
 }
 
+fn decline_appointment(appointment: &str, office: &str, padeg: i32) -> Result<String, String> {
+    let appointment = appointment.trim();
+    if appointment.is_empty() {
+        return Err("--appointment is required".to_owned());
+    }
+    if office.trim().is_empty() {
+        petrovich_com::get_appointment_padeg(appointment, padeg).map_err(|e| e.to_string())
+    } else {
+        petrovich_com::get_full_appointment_padeg(appointment, office.trim(), padeg)
+            .map_err(|e| e.to_string())
+    }
+}
+
 fn run_batch(source: &str, gender: GenderArg, case: Option<Case>) -> Result<(), String> {
     let input: Box<dyn Read> = if source == "-" {
         Box::new(std::io::stdin())
@@ -177,6 +223,34 @@ fn run_batch(source: &str, gender: GenderArg, case: Option<Case>) -> Result<(), 
     Ok(())
 }
 
+fn run_appoint_batch(source: &str, padeg: i32) -> Result<(), String> {
+    let input: Box<dyn Read> = if source == "-" {
+        Box::new(std::io::stdin())
+    } else {
+        Box::new(
+            std::fs::File::open(source)
+                .map_err(|e| format!("cannot open batch file {source:?}: {e}"))?,
+        )
+    };
+    let mut out = String::new();
+    for (line_no, line) in BufReader::new(input).lines().enumerate() {
+        let line = line.map_err(|e| format!("cannot read line {}: {e}", line_no + 1))?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let mut fields = line.split('\t');
+        let appointment = fields.next().unwrap_or("");
+        let office = fields.next().unwrap_or("");
+        out.push_str(
+            &decline_appointment(appointment, office, padeg)
+                .map_err(|e| format!("line {}: {e}", line_no + 1))?,
+        );
+        out.push('\n');
+    }
+    print!("{out}");
+    Ok(())
+}
+
 fn main() {
     let cli = Cli::parse();
     let result = match &cli.command {
@@ -186,6 +260,20 @@ fn main() {
             } else {
                 let gender = args.gender.resolve(&args.name);
                 decline_line(&args.name, gender, args.case.case()).map(|line| {
+                    println!("{line}");
+                })
+            }
+        }
+        Command::Appoint(args) => {
+            if let Some(batch) = &args.batch {
+                run_appoint_batch(batch, args.case.number())
+            } else {
+                decline_appointment(
+                    args.appointment.as_deref().unwrap_or(""),
+                    args.office.as_deref().unwrap_or(""),
+                    args.case.number(),
+                )
+                .map(|line| {
                     println!("{line}");
                 })
             }
